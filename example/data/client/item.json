@@ -1,0 +1,44 @@
+[
+  {
+    "desc": "新手练习用的木剑",
+    "id": 1001,
+    "name": "木剑",
+    "price": 100,
+    "quality": "White"
+  },
+  {
+    "desc": "锋利的铁制长剑",
+    "id": 1002,
+    "name": "铁剑",
+    "price": 500,
+    "quality": "Green"
+  },
+  {
+    "desc": "附带火焰的长剑",
+    "id": 1003,
+    "name": "火焰剑",
+    "price": 2000,
+    "quality": "Blue"
+  },
+  {
+    "desc": "传说中的神兵",
+    "id": 1004,
+    "name": "屠龙刀",
+    "price": 10000,
+    "quality": "Purple"
+  },
+  {
+    "desc": "恢复100点生命",
+    "id": 1005,
+    "name": "治疗药水",
+    "price": 50,
+    "quality": "White"
+  },
+  {
+    "desc": "恢复50点法力",
+    "id": 1006,
+    "name": "法力药水",
+    "price": 80,
+    "quality": "Green"
+  }
+]
