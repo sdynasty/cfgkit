@@ -32,6 +32,10 @@ go run github.com/sdynasty/cfgkit/gentable@latest -excel excel -code game/config
 go get github.com/sdynasty/cfgkit@v0.1.0
 ```
 
+> **国内代理提示**：若 `GOPROXY` 指向 goproxy.cn 且刚打的 tag 尚未同步（报 sumdb 404），
+> 临时用 `GOPRIVATE=github.com/sdynasty/* go get ...` 直连 git，或等代理同步后重试。
+> 若仓库设为私有，则所有成员都需设置 `GOPRIVATE`（并确保 git 有 GitHub 凭据）。
+
 ```go
 // 2. tools.go —— 钉住导表工具版本（标准 tools pattern）
 //go:build tools
