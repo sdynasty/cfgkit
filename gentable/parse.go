@@ -491,8 +491,11 @@ func ResolveAll(tables []*Table, enums []*EnumDef, structs []*StructDef) []error
 					errs = append(errs, fmt.Errorf("%s: %w", t.Loc(raw.ExcelRow, f.Col-1, f.Name), err))
 					continue
 				}
-				if f.Type.Uniq && raw.Cells[i] != "" {
-					if old, dup := uniqSeen[f.Name][v]; dup {
+				// #uniq 与运行时无条件查重保持一致：不允许空值（空格与显式零值在 JSON 中不可区分）
+				if f.Type.Uniq {
+					if raw.Cells[i] == "" {
+						errs = append(errs, fmt.Errorf("%s: 唯一索引(#uniq)字段不能为空", t.Loc(raw.ExcelRow, f.Col-1, f.Name)))
+					} else if old, dup := uniqSeen[f.Name][v]; dup {
 						errs = append(errs, fmt.Errorf("%s: 唯一索引值 %v 与第%d行重复", t.Loc(raw.ExcelRow, f.Col-1, f.Name), v, old))
 					} else {
 						uniqSeen[f.Name][v] = raw.ExcelRow

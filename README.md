@@ -89,7 +89,7 @@ go build -o bin/server ./server   # 配置已内嵌，bin/server 拷走即跑
 
 - sheet 名 = 表名 = Go 类型名，**全局唯一**；`Enum<X>` 开头为枚举表，`Struct<X>` 开头为结构体表
 - 首列必须为主键（`int/int64/string`）且标记为 `cs`
-- 首列 `#` 开头的行是注释行（分组用），空行跳过；单元格留空 = 零值（枚举/已填写的 struct 除外）
+- 首列 `#` 开头的行是注释行（分组用），空行跳过；单元格留空 = 零值（枚举、已填写的 struct、`#uniq` 字段除外）
 
 ### 类型表
 
@@ -103,6 +103,13 @@ go build -o bin/server ./server   # 配置已内嵌，bin/server 拷走即跑
 | `struct<Pos>` | `x:100;y:200` | 生成的结构体（字段全必填，空格=null=零值） |
 | `list<T>` | `\|` 分隔 | `[]T` |
 | `map<K,V>` | `k:v;k:v` | `map[K]V` |
+
+类型可加索引后缀：
+
+| 后缀 | 语义 | 生成方法 |
+|---|---|---|
+| `string#uniq` | 唯一索引，**不能为空**（空值导表报错——与运行时全行查重保持一致） | `GetByXxx(v) *Row` |
+| `string#index` | 普通索引，可重复、可为空 | `GetByXxx(v) []*Row` |
 
 枚举表（`EnumItemQuality`）：表头 `name/value/comment`，一行一个枚举项。
 结构体表（`StructDrop`）：表头 `name/type/comment`，一行一个字段，字段类型可用全部类型（可嵌套）。

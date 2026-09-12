@@ -368,6 +368,13 @@ func TestLoadAndResolveErrors(t *testing.T) {
 			wantErr: "唯一索引值 木剑 与第",
 		},
 		{
+			name: "唯一索引为空",
+			wbs: []wbSpec{commonWB(), itemWB(
+				[]any{1001, "", "White"},
+			)},
+			wantErr: "唯一索引(#uniq)字段不能为空",
+		},
+		{
 			name: "结构体循环嵌套",
 			wbs: []wbSpec{commonWB(
 				sheetSpec{"StructA", [][]any{{"name", "type", "comment"}, {"b", "struct<B>", ""}}},

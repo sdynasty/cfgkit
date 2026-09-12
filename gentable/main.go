@@ -17,7 +17,7 @@
 //   - 第 5 行起为数据，首列以 '#' 开头的行是注释行，跳过
 //   - 首列必须为主键(int/int64/string)，且导出标记必须为 cs
 //   - 类型: int int64 float bool string enum<X> ref<X> struct<X> list<T> map<K,V>
-//     可加索引后缀: string#uniq(唯一) string#index(普通)
+//     可加索引后缀: string#uniq(唯一,不能为空) string#index(普通)
 //   - Struct<名字> 开头的 sheet 定义内联结构体（表头 name/type/comment），
 //     单元格写法 字段:值;字段:值，整格留空为 Go 零值
 package main
