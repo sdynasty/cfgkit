@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      - name: vet
+        run: go vet ./...
+
+      - name: test (race)
+        run: go test -race ./...
+
+      - name: example 冒烟（导表 → 编译 → 运行）
+        working-directory: example
+        run: |
+          go mod download
+          make export
+          go build ./...
+          go run ./server -once
+
+      - name: example 产物同步检查（改了 Excel 必须重新导表提交）
+        working-directory: example
+        run: git diff --exit-code game/config data
+
+      - name: go install 验证（模拟 go run pkg@version 的解析路径）
+        run: go install ./gentable
