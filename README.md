@@ -1,5 +1,7 @@
 # cfgkit
 
+[![CI](https://github.com/sdynasty/cfgkit/actions/workflows/ci.yml/badge.svg)](https://github.com/sdynasty/cfgkit/actions/workflows/ci.yml)
+
 游戏配置系统工具包：**策划改 Excel → 导表校验 → 生成类型安全的 Go 代码 + JSON 数据 → 运行时热更**。
 
 | 组件 | 形态 | 说明 |
