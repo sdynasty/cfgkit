@@ -4,9 +4,12 @@
 package client
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -14,51 +17,102 @@ import (
 type Config struct {
 	Item    *ItemTable
 	Monster *MonsterTable
+	// Sources 逐表记录加载来源（overlay 模式下各表来源可能不同），供日志排查「当前在跑哪个版本」
+	Sources map[string]TableSource
 }
 
-// buildConfig 通过 read 逐表读取并构建。任一步失败即返回错误——热更场景下调用方应继续使用旧 Config。
-func buildConfig(read func(name string) ([]byte, error)) (*Config, error) {
-	c := &Config{}
+// TableSource 记录一张表的加载来源
+type TableSource struct {
+	Table    string // 表名（json 文件名去后缀）
+	External bool   // true=外部覆盖目录，false=内嵌
+	MD5      string // 内容指纹
+}
+
+func md5hex(b []byte) string {
+	sum := md5.Sum(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// DescribeSources 逐表列出加载来源，格式: game_id_map=external(3f725d97) journey=embed
+func (c *Config) DescribeSources() string {
+	keys := make([]string, 0, len(c.Sources))
+	for k := range c.Sources {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		s := c.Sources[k]
+		if s.External {
+			short := s.MD5
+			if len(short) > 8 {
+				short = short[:8]
+			}
+			parts = append(parts, fmt.Sprintf("%s=external(%s)", k, short))
+		} else {
+			parts = append(parts, k+"=embed")
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// buildConfig 通过 read 逐表读取并构建；read 返回数据与来源（external=true 表示外部目录）。任一步失败即返回错误——热更场景下调用方应继续使用旧 Config。
+func buildConfig(read func(name string) (data []byte, external bool, err error)) (*Config, error) {
+	c := &Config{Sources: map[string]TableSource{}}
 	var data []byte
+	var external bool
 	var err error
-	if data, err = read("item.json"); err == nil {
+	if data, external, err = read("item.json"); err == nil {
 		c.Item, err = newItemTable(data)
 	}
 	if err != nil {
 		return nil, err
 	}
-	if data, err = read("monster.json"); err == nil {
+	c.Sources["item"] = TableSource{Table: "item", External: external, MD5: md5hex(data)}
+	if data, external, err = read("monster.json"); err == nil {
 		c.Monster, err = newMonsterTable(data)
 	}
 	if err != nil {
 		return nil, err
 	}
+	c.Sources["monster"] = TableSource{Table: "monster", External: external, MD5: md5hex(data)}
 	return c, nil
 }
 
-// Load 从外部目录读取全部 JSON 配置并构建索引。
+// Load 从外部目录读取全部 JSON 配置并构建索引（要求目录是完整的一套表，缺表报错）。
 func Load(dir string) (*Config, error) {
-	return buildConfig(func(name string) ([]byte, error) {
+	return buildConfig(func(name string) ([]byte, bool, error) {
 		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
-			return nil, fmt.Errorf("读取配置 %s 失败: %w", name, err)
+			return nil, true, fmt.Errorf("读取配置 %s 失败: %w", name, err)
 		}
-		return data, nil
+		return data, true, nil
 	})
 }
 
 // LoadEmbedded 加载编译进二进制的内嵌配置（见 embed_gen.go）。
 // 部署形态: 单二进制，无需携带任何外部数据文件。
 
-// LoadAuto 优先从外部覆盖目录加载；dir 不存在或没有 JSON 时回落到内嵌配置。
-// 配合 hotreload.Manager 即为「单二进制部署 + 推文件热更」:
-// 往 dir 推一套完整 JSON 即切换生效；清空 dir 则回落内嵌版本。
-// 注意: 覆盖目录必须是完整的一套表，缺表会导致加载失败（并保留旧配置）。
+// LoadAuto 逐表叠加（overlay）加载: dir 里有哪些表就用哪些表的外部版本，
+// 缺失的表回落该表的内嵌版本。配合 hotreload.Manager 支持单文件热修:
+// 往 dir 放单个 JSON 只覆盖对应表，删掉它即回落内嵌。
+// 注意: 存在但损坏的 JSON 会让整体加载失败（热更保留旧配置，启动 fail-fast），
+// 不会静默回落内嵌——错误应当被看见。
 func LoadAuto(dir string) (*Config, error) {
-	if HasExternal(dir) {
-		return Load(dir)
-	}
-	return LoadEmbedded()
+	return buildConfig(func(name string) ([]byte, bool, error) {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err == nil {
+			return data, true, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, true, fmt.Errorf("读取配置 %s 失败: %w", name, err)
+		}
+		data, err = embeddedJSON.ReadFile("data/" + name)
+		if err != nil {
+			return nil, false, fmt.Errorf("读取内嵌配置 %s 失败: %w", name, err)
+		}
+		return data, false, nil
+	})
 }
 
 // HasExternal 报告 dir 下是否存在外部 JSON 配置

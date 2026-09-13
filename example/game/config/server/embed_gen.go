@@ -15,11 +15,11 @@ var embeddedJSON embed.FS
 
 // LoadEmbedded 加载编译进二进制的内嵌配置
 func LoadEmbedded() (*Config, error) {
-	return buildConfig(func(name string) ([]byte, error) {
+	return buildConfig(func(name string) ([]byte, bool, error) {
 		data, err := embeddedJSON.ReadFile("data/" + name)
 		if err != nil {
-			return nil, fmt.Errorf("读取内嵌配置 %s 失败: %w", name, err)
+			return nil, false, fmt.Errorf("读取内嵌配置 %s 失败: %w", name, err)
 		}
-		return data, nil
+		return data, false, nil
 	})
 }

@@ -24,7 +24,7 @@ import (
 // Manager 配置管理器（热更安全），C 为生成的 Config 类型
 type Manager[C any] struct {
 	dir      string
-	load     func(dir string) (*C, error) // 即生成代码里的 Load
+	load     func(dir string) (*C, error) // 即生成代码里的 LoadAuto
 	cur      atomic.Pointer[C]
 	mu       sync.Mutex // 保护 mtimes
 	mtimes   map[string]time.Time

@@ -30,6 +30,7 @@ jobs:
           go mod download
           make export
           go build ./...
+          go test ./...
           go run ./server -once
 
       - name: example 产物同步检查（改了 Excel 必须重新导表提交）
