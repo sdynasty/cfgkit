@@ -143,9 +143,9 @@ func DiffSide(tables []*Table, side, baseDir string) []TableDiff {
 }
 
 // SnapshotCode 记录已生成代码文件的内容，用于导表后对比定义变更
-func SnapshotCode(codeRoot string) map[string][]byte {
+func SnapshotCode(codeRoot string, sideList []string) map[string][]byte {
 	snap := map[string][]byte{}
-	for _, side := range sides {
+	for _, side := range sideList {
 		dir := filepath.Join(codeRoot, side)
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -164,7 +164,7 @@ func SnapshotCode(codeRoot string) map[string][]byte {
 }
 
 // ChangedCodeFiles 对比快照，返回内容变化的生成代码文件（含新增）
-func ChangedCodeFiles(before map[string][]byte, codeRoot string) []string {
+func ChangedCodeFiles(before map[string][]byte, codeRoot string, sideList []string) []string {
 	var changed []string
 	for name, oldData := range before {
 		newData, err := os.ReadFile(filepath.Join(codeRoot, filepath.FromSlash(name)))
@@ -172,7 +172,7 @@ func ChangedCodeFiles(before map[string][]byte, codeRoot string) []string {
 			changed = append(changed, name)
 		}
 	}
-	after := SnapshotCode(codeRoot)
+	after := SnapshotCode(codeRoot, sideList)
 	for name := range after {
 		if _, ok := before[name]; !ok {
 			changed = append(changed, name+"(新增)")
@@ -190,16 +190,16 @@ func BaselineDir(dataRoot, codeRoot, side string) string {
 	return filepath.Join(codeRoot, side, "data")
 }
 
-// BuildDiffReport 生成完整 diff 摘要文本（含两端数据差异与定义文件变更）。
+// BuildDiffReport 生成完整 diff 摘要文本（含各端数据差异与定义文件变更）。
 // sideDiffs 必须在写入新产物之前用 DiffSide 采集。
-func BuildDiffReport(sideDiffs map[string][]TableDiff, changedCode []string, firstRun bool) string {
+func BuildDiffReport(sideDiffs map[string][]TableDiff, changedCode []string, firstRun bool, sideList []string) string {
 	var b strings.Builder
 	b.WriteString("── 导表 diff 摘要（对比上次导出）─────────────────\n")
 	if firstRun {
 		b.WriteString("  首次导出，无基线可对比。\n")
 	}
 	totalChanges := 0
-	for _, side := range sides {
+	for _, side := range sideList {
 		diffs := sideDiffs[side]
 		if len(diffs) == 0 {
 			continue

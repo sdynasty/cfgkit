@@ -9,8 +9,31 @@ import (
 	"strings"
 )
 
-// sides 两个导出端。client 包含 c+cs 字段，server 包含 s+cs 字段。
-var sides = []string{"client", "server"}
+// allSides 全部支持的导出端。client 包含 c+cs 字段，server 包含 s+cs 字段。
+// 实际导出的端由 -sides 决定（见 parseSides）
+var allSides = []string{"client", "server"}
+
+// parseSides 解析 -sides 标志: client,server 的非空子集（逗号分隔；输出规范化为固定顺序）
+func parseSides(s string) ([]string, error) {
+	want := map[string]bool{}
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p != "client" && p != "server" {
+			return nil, fmt.Errorf("非法 -sides 值 %q（可选 client,server 的逗号分隔子集）", s)
+		}
+		want[p] = true
+	}
+	out := []string{}
+	for _, side := range allSides {
+		if want[side] {
+			out = append(out, side)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("-sides 不能为空")
+	}
+	return out, nil
+}
 
 // includeField 判断字段是否属于该端
 func includeField(f *Field, side string) bool {
@@ -44,7 +67,7 @@ func genHeader(pkg, note string) string {
 //	<codeRoot>/server/  package server（仅 s+cs 字段）
 //
 // 每套包含: enum_gen.go / struct_gen.go / tables_gen.go / config_gen.go
-func WriteGoCode(tables []*Table, enums []*EnumDef, structs []*StructDef, codeRoot string) error {
+func WriteGoCode(tables []*Table, enums []*EnumDef, structs []*StructDef, codeRoot string, sideList []string, wc *writeCounter) error {
 	refPK := func(sheet string) string {
 		for _, t := range tables {
 			if t.Sheet == sheet {
@@ -53,7 +76,7 @@ func WriteGoCode(tables []*Table, enums []*EnumDef, structs []*StructDef, codeRo
 		}
 		return "int32"
 	}
-	for _, side := range sides {
+	for _, side := range sideList {
 		dir := filepath.Join(codeRoot, side)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
@@ -65,7 +88,7 @@ func WriteGoCode(tables []*Table, enums []*EnumDef, structs []*StructDef, codeRo
 			if err != nil {
 				return fmt.Errorf("生成的 %s 不是合法 Go 代码: %w", name, err)
 			}
-			return os.WriteFile(filepath.Join(dir, name), formatted, 0o644)
+			return wc.writeIfChanged(filepath.Join(dir, name), formatted)
 		}
 		if err := write("enum_gen.go", genEnums(enums, side, note)); err != nil {
 			return err

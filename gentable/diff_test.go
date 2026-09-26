@@ -132,7 +132,7 @@ func TestBuildDiffReport(t *testing.T) {
 			Modified: []RowMod{{PK: "1001", Changes: []FieldChange{{Field: "price", OldStr: "100", NewStr: "150"}}}},
 		}},
 	}
-	report := BuildDiffReport(diffs, []string{"server/enum_gen.go", "server/tables_gen.go"}, false)
+	report := BuildDiffReport(diffs, []string{"server/enum_gen.go", "server/tables_gen.go"}, false, allSides)
 	for _, want := range []string{"[server]", "Item(item.xlsx)", "price: 100 → 150", "定义变更", "enum_gen.go"} {
 		if !strings.Contains(report, want) {
 			t.Errorf("报告应包含 %q:\n%s", want, report)
@@ -142,11 +142,11 @@ func TestBuildDiffReport(t *testing.T) {
 		t.Errorf("tables_gen.go 不应出现在定义变更里:\n%s", report)
 	}
 
-	first := BuildDiffReport(nil, nil, true)
+	first := BuildDiffReport(nil, nil, true, allSides)
 	if !strings.Contains(first, "首次导出") {
 		t.Errorf("首次导出提示缺失:\n%s", first)
 	}
-	same := BuildDiffReport(map[string][]TableDiff{}, nil, false)
+	same := BuildDiffReport(map[string][]TableDiff{}, nil, false, allSides)
 	if !strings.Contains(same, "数据无变化") {
 		t.Errorf("无变化提示缺失:\n%s", same)
 	}
