@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -126,5 +127,56 @@ func waitEvent(t *testing.T, ch <-chan string, prefix string) {
 		case <-deadline:
 			t.Fatalf("等待事件 %q 超时", prefix)
 		}
+	}
+}
+
+// TestWithOnReload 通过 New 的选项设置回调（推荐用法），watcher 变更应触发
+func TestWithOnReload(t *testing.T) {
+	dir := t.TempDir()
+	writeCfg(t, dir, 1)
+	events := make(chan string, 4)
+	m, err := New(dir, fakeLoad, WithOnReload(func(cfg *fakeCfg, err error) {
+		if err != nil {
+			events <- "err"
+			return
+		}
+		events <- fmt.Sprintf("ok:%d", cfg.V)
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.StopWatch()
+	m.StartWatch(10 * time.Millisecond)
+
+	writeCfg(t, dir, 7)
+	waitEvent(t, events, "ok:7")
+}
+
+// TestConcurrentReloadRace 并发 Reload + watcher + Get 混合调用，跑 go test -race 验证无数据竞争。
+// Reload 内部互斥串行化；全部并发结束后配置应处于一致状态。
+func TestConcurrentReloadRace(t *testing.T) {
+	dir := t.TempDir()
+	writeCfg(t, dir, 1)
+	m, err := New(dir, fakeLoad, WithOnReload(func(cfg *fakeCfg, err error) {}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.StopWatch()
+	m.StartWatch(time.Millisecond)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				_ = m.Reload()
+				_ = m.Get().V
+			}
+		}(i)
+	}
+	wg.Wait()
+	if got := m.Get().V; got != 1 {
+		t.Errorf("最终 Get().V = %d, 期望 1", got)
 	}
 }
