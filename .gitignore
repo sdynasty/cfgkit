@@ -2,3 +2,4 @@ bin/
 example/bin/
 *.log
 .DS_Store
+.idea/
