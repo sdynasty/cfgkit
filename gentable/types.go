@@ -37,6 +37,9 @@ type TypeExpr struct {
 // ParseType 解析表头第2行的类型声明，如 "list<ref<Item>>"、"string#uniq"
 func ParseType(s string) (*TypeExpr, error) {
 	t := strings.TrimSpace(s)
+	if strings.Contains(t, "?") {
+		return nil, fmt.Errorf("类型 %q 含可选标记 ?: 仅结构体(Struct)定义表的字段支持 type? 与 type?=默认值，数据表列不支持", s)
+	}
 	uniq, index := false, false
 	for changed := true; changed; {
 		changed = false

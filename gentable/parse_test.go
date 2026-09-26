@@ -245,7 +245,7 @@ func monsterWB(data ...[]any) wbSpec {
 }
 
 func collectErrs(dir string) []error {
-	tables, enums, structs, errs := LoadExcels(dir)
+	tables, enums, structs, _, errs := LoadExcels(dir)
 	if len(errs) == 0 {
 		errs = append(errs, ResolveAll(tables, enums, structs)...)
 	}
@@ -279,7 +279,7 @@ func TestLoadAndResolveValid(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, ".~lock.xlsx"), []byte("junk"), 0o644)
 	os.WriteFile(filepath.Join(dir, "~$temp.xlsx"), []byte("junk"), 0o644)
 
-	tables, enums, structs, errs := LoadExcels(dir)
+	tables, enums, structs, _, errs := LoadExcels(dir)
 	if len(errs) != 0 {
 		t.Fatalf("LoadExcels 报错: %v", errs)
 	}

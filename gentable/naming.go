@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"unicode"
 )
@@ -58,4 +59,28 @@ func toSnake(s string) string {
 		b.WriteRune(unicode.ToLower(r))
 	}
 	return b.String()
+}
+
+// goKeywords Go 关键字（sheet/枚举/结构体名用作 Go 类型名，不能与之冲突）
+var goKeywords = map[string]bool{
+	"break": true, "case": true, "chan": true, "const": true, "continue": true,
+	"default": true, "defer": true, "else": true, "fallthrough": true, "for": true,
+	"func": true, "go": true, "goto": true, "if": true, "import": true,
+	"interface": true, "map": true, "package": true, "range": true, "return": true,
+	"select": true, "struct": true, "switch": true, "type": true, "var": true,
+}
+
+// validGoTypeName 校验用作 Go 类型名的名字（数据表 sheet 名、枚举名、结构体名）。
+// 这些名字直接拼进生成代码，不合法会在编译期才炸——提前到导表期拦截。
+func validGoTypeName(name string) error {
+	if name == "" {
+		return fmt.Errorf("名字为空")
+	}
+	if !isIdent(name) {
+		return fmt.Errorf("%q 不是合法 Go 标识符（仅字母/数字/下划线，且不以数字开头）", name)
+	}
+	if goKeywords[name] {
+		return fmt.Errorf("%q 是 Go 关键字", name)
+	}
+	return nil
 }
