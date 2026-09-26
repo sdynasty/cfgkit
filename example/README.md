@@ -14,6 +14,7 @@ example/
 ├── game/config/
 │   ├── client/         # [生成] package client（cs+c 字段，含内嵌 data/）
 │   ├── server/         # [生成] package server（cs+s 字段，含内嵌 data/）
+│   ├── manifest.json   # [生成] 产物清单（版本/逐表 md5/整体 digest，运行时不消费）
 │   └── (hotreload 来自 github.com/sdynasty/cfgkit/hotreload)
 ├── data/               # [生成] 外部 JSON（开发热更调试 / 线上覆盖目录）
 └── server/             # 最小示例服务端
@@ -30,7 +31,7 @@ make bin             # 单二进制部署产物 bin/server（配置 go:embed 内
 ## 拷到自己项目后要改的三处
 
 1. `go.mod`：改 module 名；**删掉 `replace` 行**，然后
-   `go get github.com/sdynasty/cfgkit@v0.1.0`
+   `go get github.com/sdynasty/cfgkit@v0.2.0`
 2. `server/main.go`：import 路径里的 `github.com/sdynasty/cfgkit/example` 换成你的 module 名
 3. `excel/`：换成你的表（格式规范见仓库根 README）
 

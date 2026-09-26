@@ -4,7 +4,7 @@
 package server
 
 // Drop 内联结构体，定义于 common.xlsx[StructDrop]
-// 单元格写法: item:目标主键;rate:0.5;count:100
+// 单元格写法: item:目标主键;rate:0.5;count:100;weight:100
 type Drop struct {
 	// 掉落道具ID
 	Item int32 `json:"item"`
@@ -12,6 +12,8 @@ type Drop struct {
 	Rate float64 `json:"rate"`
 	// 掉落数量
 	Count int32 `json:"count"`
+	// 权重(可选,省略时取默认值1)
+	Weight int32 `json:"weight"`
 }
 
 // Pos 内联结构体，定义于 common.xlsx[StructPos]

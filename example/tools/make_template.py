@@ -108,6 +108,7 @@ write_struct_sheet(ws, [
     ("item",  "ref<Item>", "掉落道具ID"),
     ("rate",  "float",     "掉落概率(0~1)"),
     ("count", "int",       "掉落数量"),
+    ("weight", "int?=1",   "权重(可选,省略时取默认值1)"),
 ])
 ws = wb.create_sheet("StructPos")
 write_struct_sheet(ws, [
@@ -166,7 +167,7 @@ write_table_sheet(
         [2001, "野狼",     3,  150,  "1001|1005",      "野兽",      "aggro:1;speed:3", "x:120;y:340",  "item:1001;rate:0.6;count:1|item:1005;rate:0.3;count:2", "新手村外游荡的野狼"],
         [2002, "哥布林",   5,  300,  "1002|1005|1006", "人形",      "aggro:2;speed:2", "x:88;y:210",   "item:1002;rate:0.4;count:1|item:1006;rate:0.4;count:1", "弱小但成群出没"],
         [2003, "火焰蜥蜴", 8,  650,  "1003",           "野兽|火系", "aggro:3;speed:1", "x:450;y:920",  "item:1003;rate:0.25;count:1",                           "尾部可喷出火焰"],
-        [2004, "幼龙",     15, 3000, "1004|1003",      "龙类|BOSS", "aggro:5;speed:4", "x:1024;y:777", "item:1004;rate:0.05;count:1|item:1003;rate:0.5;count:1", "龙穴的守护者"],
+        [2004, "幼龙",     15, 3000, "1004|1003",      "龙类|BOSS", "aggro:5;speed:4", "x:1024;y:777", "item:1004;rate:0.05;count:1;weight:3|item:1003;rate:0.5;count:1", "龙穴的守护者"],
         [2005, "宝箱怪",   10, 1200, "1002|1006",      "拟态",      "stealth:5;aggro:4", "x:66;y:130", "item:1002;rate:0.8;count:1|item:1006;rate:0.8;count:2", "伪装成宝箱的魔物"],
     ],
     widths={0: 10, 1: 14, 2: 8, 3: 10, 4: 20, 5: 14, 6: 22, 7: 16, 8: 46, 9: 30},

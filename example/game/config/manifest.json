@@ -1,0 +1,52 @@
+{
+  "version": "v0.1.0",
+  "sides": [
+    "client",
+    "server"
+  ],
+  "tables": [
+    {
+      "side": "client",
+      "name": "Item",
+      "file": "item.json",
+      "md5": "1307b10f876279d9913b0f14720f2170",
+      "rows": 6
+    },
+    {
+      "side": "client",
+      "name": "Monster",
+      "file": "monster.json",
+      "md5": "2abceb635377a5df95f6caa3e8269e2c",
+      "rows": 5
+    },
+    {
+      "side": "server",
+      "name": "Item",
+      "file": "item.json",
+      "md5": "9101e735ddb440e14ead4ca8305a2d0f",
+      "rows": 6
+    },
+    {
+      "side": "server",
+      "name": "Monster",
+      "file": "monster.json",
+      "md5": "5d1348fdc34cc1b81ca70241b377f11c",
+      "rows": 5
+    }
+  ],
+  "sources": [
+    {
+      "file": "common.xlsx",
+      "md5": "c522aabfe09704afbaf190b0e14eb9a7"
+    },
+    {
+      "file": "item.xlsx",
+      "md5": "09c17dc35e71ac4601837a192d0d86ce"
+    },
+    {
+      "file": "monster.xlsx",
+      "md5": "652fa896928385d77b64a49f5681ed72"
+    }
+  ],
+  "digest": "a93f8551ff167e6476585c7cdf31c3e6"
+}
