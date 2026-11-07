@@ -2,7 +2,7 @@ module github.com/sdynasty/cfgkit/example
 
 go 1.25.0
 
-require github.com/sdynasty/cfgkit v0.1.0
+require github.com/sdynasty/cfgkit v0.3.0
 
 require (
 	github.com/richardlehane/mscfb v1.0.7 // indirect
@@ -17,5 +17,5 @@ require (
 )
 
 // 本地联调用 replace；把 example 拷贝到你自己的项目时删掉这一行，
-// 改用 go get github.com/sdynasty/cfgkit@v0.1.0
+// 改用 go get github.com/sdynasty/cfgkit@v0.3.0
 replace github.com/sdynasty/cfgkit => ../

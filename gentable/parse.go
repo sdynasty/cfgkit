@@ -684,6 +684,7 @@ func ResolveAll(tables []*Table, enums []*EnumDef, structs []*StructDef) []error
 
 	// 逐行解析 + 唯一索引 / 引用存在性校验
 	for _, t := range tables {
+		t.Values = t.Values[:0]
 		uniqSeen := map[string]map[any]int{}
 		for _, f := range t.Fields {
 			if f.Type.Uniq {
@@ -731,8 +732,8 @@ func checkGeneratedIdents(tables []*Table, enums []*EnumDef, structs []*StructDe
 	}
 	// 生成代码里的框架级标识符（见 gencode.go 的 config_gen.go/embed_gen.go 模板）
 	for _, name := range []string{
-		"Config", "TableSource", "Load", "LoadAuto", "LoadEmbedded", "HasExternal",
-		"md5hex", "buildConfig", "embeddedJSON",
+		"Config", "ConfigSet", "TableSource", "LoadConfigSet", "LoadConfigSetAuto", "LoadConfigSetEmbedded", "HasExternal",
+		"md5hex", "buildConfig", "buildConfigSet", "embeddedJSON",
 	} {
 		idents[name] = "框架保留标识符（" + name + "）"
 	}

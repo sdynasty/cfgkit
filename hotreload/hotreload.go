@@ -1,9 +1,9 @@
 // Package hotreload 为生成的配置提供热更能力（手写代码，gentable 不会覆盖）。
 //
-// Manager[C] 是泛型配置管理器，C 为各端生成的 Config 类型:
+// Manager[C] 是泛型配置管理器，C 为各端生成的 ConfigSet 类型:
 //
-//	serverMgr, _ := hotreload.New("data/server", server.Load)
-//	clientMgr, _ := hotreload.New("data/client", client.Load)
+//	serverMgr, _ := hotreload.New("data/server", server.LoadConfigSetAuto, hotreload.WithRecursive[server.ConfigSet]())
+//	clientMgr, _ := hotreload.New("data/client", client.LoadConfigSetAuto, hotreload.WithRecursive[client.ConfigSet]())
 //
 // 语义:
 //   - Get() 原子返回当前 Config 快照，业务侧无锁读取
@@ -16,6 +16,7 @@ package hotreload
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,15 +25,16 @@ import (
 
 // Manager 配置管理器（热更安全），C 为生成的 Config 类型
 type Manager[C any] struct {
-	dir      string
-	load     func(dir string) (*C, error) // 即生成代码里的 LoadAuto
-	cur      atomic.Pointer[C]
-	mu       sync.Mutex   // 保护 mtimes
-	reloadMu sync.Mutex   // 串行化 Reload（外部调用与 watcher 可能并发触发）
-	cbMu     sync.RWMutex // 保护 OnReload 回调的读取（WithOnReload 设置，watcher goroutine 读取）
-	mtimes   map[string]time.Time
-	stopCh   chan struct{}
-	stopOnce sync.Once
+	dir       string
+	load      func(dir string) (*C, error) // 即生成代码里的 LoadConfigSetAuto
+	recursive bool
+	cur       atomic.Pointer[C]
+	mu        sync.Mutex   // 保护 mtimes
+	reloadMu  sync.Mutex   // 串行化 Reload（外部调用与 watcher 可能并发触发）
+	cbMu      sync.RWMutex // 保护 OnReload 回调的读取（WithOnReload 设置，watcher goroutine 读取）
+	mtimes    map[string]time.Time
+	stopCh    chan struct{}
+	stopOnce  sync.Once
 
 	// OnReload 热更回调（成功时 err 为 nil，失败时旧配置继续生效）。可选。
 	//
@@ -47,6 +49,11 @@ type Option[C any] func(*Manager[C])
 // WithOnReload 设置热更回调（等价于在 StartWatch 前给 OnReload 字段赋值，但并发安全）
 func WithOnReload[C any](fn func(cfg *C, err error)) Option[C] {
 	return func(m *Manager[C]) { m.setOnReload(fn) }
+}
+
+// WithRecursive 递归监测 Branch 子目录中的 JSON 新增、修改与删除。
+func WithRecursive[C any]() Option[C] {
+	return func(m *Manager[C]) { m.recursive = true }
 }
 
 // New 加载 dir 下的全部 JSON 配置。首次加载失败直接返回错误。
@@ -126,7 +133,7 @@ func (m *Manager[C]) setOnReload(fn func(*C, error)) {
 }
 
 func (m *Manager[C]) changed() bool {
-	cur := scanDir(m.dir)
+	cur := scanDir(m.dir, m.recursive)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if len(cur) != len(m.mtimes) {
@@ -143,11 +150,26 @@ func (m *Manager[C]) changed() bool {
 func (m *Manager[C]) snapshot() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.mtimes = scanDir(m.dir)
+	m.mtimes = scanDir(m.dir, m.recursive)
 }
 
-func scanDir(dir string) map[string]time.Time {
+func scanDir(dir string, recursive bool) map[string]time.Time {
 	out := map[string]time.Time{}
+	if recursive {
+		_ = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+				return nil
+			}
+			if info, infoErr := entry.Info(); infoErr == nil {
+				rel, relErr := filepath.Rel(dir, path)
+				if relErr == nil {
+					out[filepath.ToSlash(rel)] = info.ModTime()
+				}
+			}
+			return nil
+		})
+		return out
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return out

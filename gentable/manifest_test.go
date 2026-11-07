@@ -38,7 +38,7 @@ func TestManifestContent(t *testing.T) {
 	if len(m.Tables) != 2 { // Item × client/server
 		t.Fatalf("Tables = %v", m.Tables)
 	}
-	itemJSON, err := os.ReadFile(filepath.Join(codeRoot, "server", "data", "item.json"))
+	itemJSON, err := os.ReadFile(filepath.Join(codeRoot, "server", "data", "main", "item.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestManifestContent(t *testing.T) {
 	for _, tb := range m.Tables {
 		if tb.Side == "server" && tb.Name == "Item" {
 			found = true
-			if tb.File != "item.json" || tb.Rows != 1 || tb.MD5 != hex.EncodeToString(sum[:]) {
+			if tb.Branch != "main" || tb.File != "main/item.json" || tb.Rows != 1 || tb.MD5 != hex.EncodeToString(sum[:]) {
 				t.Errorf("Item/server 记录不符: %+v", tb)
 			}
 		}

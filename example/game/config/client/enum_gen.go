@@ -8,7 +8,7 @@ import (
 	"fmt"
 )
 
-// ItemQuality 枚举，定义于 common.xlsx[EnumItemQuality]
+// ItemQuality 枚举，定义于 main/common.xlsx[EnumItemQuality]
 type ItemQuality int32
 
 const (

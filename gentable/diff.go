@@ -35,6 +35,7 @@ type RowMod struct {
 // TableDiff 一张表在某个端的差异
 type TableDiff struct {
 	Sheet, File string
+	Branch      string
 	IsNewTable  bool // 基线不存在（首次导出该表）
 	AddedPKs    []string
 	RemovedPKs  []string
@@ -54,7 +55,11 @@ func DiffSide(tables []*Table, side, baseDir string) []TableDiff {
 	for _, t := range tables {
 		fs := fieldsFor(t, side)
 		pkName := fs[0].Name
-		d := TableDiff{Sheet: t.Sheet, File: t.File}
+		branch := ""
+		if name, _, ok := strings.Cut(t.File, "/"); ok {
+			branch = name
+		}
+		d := TableDiff{Sheet: t.Sheet, File: t.File, Branch: branch}
 
 		raw, err := os.ReadFile(filepath.Join(baseDir, toSnake(t.Sheet)+".json"))
 		if err != nil {
@@ -182,12 +187,12 @@ func ChangedCodeFiles(before map[string][]byte, codeRoot string, sideList []stri
 	return changed
 }
 
-// BaselineDir 返回某端 diff 基线目录（优先外部数据目录，否则用包内内嵌数据目录）
-func BaselineDir(dataRoot, codeRoot, side string) string {
+// BaselineDir 返回某端某 Branch 的 diff 基线目录（优先外部数据目录，否则用包内内嵌数据目录）
+func BaselineDir(dataRoot, codeRoot, side, branch string) string {
 	if dataRoot != "" {
-		return filepath.Join(dataRoot, side)
+		return filepath.Join(dataRoot, side, branch)
 	}
-	return filepath.Join(codeRoot, side, "data")
+	return filepath.Join(codeRoot, side, "data", branch)
 }
 
 // BuildDiffReport 生成完整 diff 摘要文本（含各端数据差异与定义文件变更）。
@@ -232,6 +237,9 @@ func BuildDiffReport(sideDiffs map[string][]TableDiff, changedCode []string, fir
 
 func writeTableDiff(b *strings.Builder, d TableDiff) {
 	header := fmt.Sprintf("  %s(%s): ", d.Sheet, d.File)
+	if d.Branch != "" {
+		header = fmt.Sprintf("  [%s] %s(%s): ", d.Branch, d.Sheet, d.File)
+	}
 	if d.IsNewTable {
 		fmt.Fprintf(b, "%s新表，%d 行\n", header, len(d.AddedPKs))
 		return

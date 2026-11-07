@@ -16,7 +16,7 @@ import (
 //
 // 在 -code 根目录生成 manifest.json（注意不能进 <side>/data/，会干扰内嵌与覆盖目录）。
 // 内容确定性强: 不含时间戳，配合 write-if-changed 只在内容真实变化时刷新。
-// 运行时加载（Load/LoadEmbedded/LoadAuto）不消费它，纯供版本核对与审计。
+// 运行时 ConfigSet 加载不消费它，纯供版本核对与审计。
 
 // manifestFile 产物清单文件名（固定生成在 -code 根目录）
 const manifestFile = "manifest.json"
@@ -31,11 +31,12 @@ type manifest struct {
 }
 
 type manifestTable struct {
-	Side string `json:"side"`
-	Name string `json:"name"` // 表名（sheet 名）
-	File string `json:"file"` // JSON 文件名
-	MD5  string `json:"md5"`
-	Rows int    `json:"rows"` // 数据行数
+	Side   string `json:"side"`
+	Branch string `json:"branch"`
+	Name   string `json:"name"` // 表名（sheet 名）
+	File   string `json:"file"` // 相对数据根目录的 JSON 文件路径
+	MD5    string `json:"md5"`
+	Rows   int    `json:"rows"` // 数据行数
 }
 
 type manifestSource struct {
@@ -61,7 +62,7 @@ func writeManifest(excelDir, codeRoot string, files []jsonFile, sideList []strin
 	}
 	for _, jf := range files {
 		m.Tables = append(m.Tables, manifestTable{
-			Side: jf.Side, Name: jf.Name, File: jf.File, MD5: jf.MD5, Rows: jf.Rows,
+			Side: jf.Side, Branch: jf.Branch, Name: jf.Name, File: jf.File, MD5: jf.MD5, Rows: jf.Rows,
 		})
 	}
 
@@ -96,7 +97,7 @@ func writeManifest(excelDir, codeRoot string, files []jsonFile, sideList []strin
 	// 整体 digest: 全部表产物与源文件的指纹再取指纹
 	h := md5.New()
 	for _, t := range m.Tables {
-		fmt.Fprintf(h, "%s/%s:%s:%d\n", t.Side, t.Name, t.MD5, t.Rows)
+		fmt.Fprintf(h, "%s/%s:%s:%d\n", t.Side, t.File, t.MD5, t.Rows)
 	}
 	for _, s := range m.Sources {
 		fmt.Fprintf(h, "src:%s:%s\n", s.File, s.MD5)

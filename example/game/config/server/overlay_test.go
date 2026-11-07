@@ -9,10 +9,16 @@ import (
 	"testing"
 )
 
-// LoadAuto 逐表 overlay 语义: 目录里有哪些表就用哪些，缺的回落内嵌
+func loadMain(dir string) (*Config, error) {
+	set, err := LoadConfigSetAuto(dir)
+	if err != nil {
+		return nil, err
+	}
+	return set.Get("main")
+}
 
 func TestLoadAutoEmptyDir(t *testing.T) {
-	cfg, err := LoadAuto(t.TempDir())
+	cfg, err := loadMain(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,15 +32,19 @@ func TestLoadAutoEmptyDir(t *testing.T) {
 
 func TestLoadAutoSingleFileOverlay(t *testing.T) {
 	dir := t.TempDir()
-	src, err := os.ReadFile(filepath.Join("..", "..", "..", "data", "server", "item.json"))
+	src, err := os.ReadFile(filepath.Join("..", "..", "..", "data", "server", "main", "item.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "item.json"), src, 0o644); err != nil {
+	path := filepath.Join(dir, "main", "item.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, src, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	cfg, err := LoadAuto(dir)
+	cfg, err := loadMain(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,10 +60,14 @@ func TestLoadAutoSingleFileOverlay(t *testing.T) {
 
 func TestLoadAutoCorruptFileFailsLoud(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "item.json"), []byte("{"), 0o644); err != nil {
+	path := filepath.Join(dir, "main", "item.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, err := LoadAuto(dir)
+	if err := os.WriteFile(path, []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadMain(dir)
 	if err == nil {
 		t.Fatal("损坏的外部文件应报错，不允许静默回落内嵌")
 	}

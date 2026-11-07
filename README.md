@@ -15,6 +15,7 @@
 - **类型系统**：`int/int64/float/bool/string`、`enum<X>`、`ref<X>`（跨表引用校验）、`struct<X>`（内联结构体）、`list<T>`、`map<K,V>`，可嵌套（`list<struct<Drop>>`）；struct 字段支持可选标记 `type?` / `type?=默认值`
 - **索引**：`#uniq` / `#index` 后缀，生成 `Get` / `GetByXxx` O(1) 查询方法
 - **分端导出**：表头第 4 行 `cs/c/s/-` 标记，一次导表产出 client/server 两套独立的包与数据（可 `-sides` 只导一端），字段差异编译期保证
+- **多 Branch 配置**：`excel/main` 是完整默认配置，其他一级目录按 sheet 整表覆盖；每个 Branch 都生成一套完整有效 JSON，并支持逐 Branch 热更
 - **单二进制部署**：JSON 经 `go:embed` 编译进二进制；配合覆盖目录实现「不发版热更」
 - **导表校验**：主键唯一、int/枚举值 int32 范围、枚举合法、ref 存在、struct 必填字段、循环嵌套、Go 标识符冲突、JSON 文件名冲突——错误信息精确到 Excel 文件/sheet/行/列，策划可直接照改
 - **diff 摘要**：每次导表对比上次产物，按端输出 +行/-行/~字段级变更/schema 变更/定义变更，可 `-diff-out` 存档供 CI/PR 使用
@@ -23,8 +24,8 @@
 ## 30 秒试用（无需 clone）
 
 ```bash
-mkdir mygame && cd mygame && mkdir excel
-# 放入任意符合规范的 xlsx（可从 example/excel/ 拷示例），然后:
+mkdir mygame && cd mygame && mkdir -p excel/main
+# 把符合规范的完整默认表放入 excel/main（可从 example/excel/main/ 拷示例），然后:
 go run github.com/sdynasty/cfgkit/gentable@latest -excel excel -code game/config -data data
 ```
 
@@ -32,7 +33,7 @@ go run github.com/sdynasty/cfgkit/gentable@latest -excel excel -code game/config
 
 ```bash
 # 1. 依赖
-go get github.com/sdynasty/cfgkit@v0.2.0
+go get github.com/sdynasty/cfgkit@v0.3.0
 ```
 
 > **国内代理提示**：若 `GOPROXY` 指向 goproxy.cn 且刚打的 tag 尚未同步（报 sumdb 404），
@@ -61,12 +62,13 @@ import (
     "yourmod/game/config/server"
 )
 
-mgr, err := hotreload.New("/etc/game/server", server.LoadAuto)
+mgr, err := hotreload.New("/etc/game/server", server.LoadConfigSetAuto,
+    hotreload.WithRecursive[server.ConfigSet]())
 mgr.StartWatch(time.Second)
 defer mgr.StopWatch()
 
-cfg := mgr.Get()                 // 原子快照，只读
-item := cfg.Item.Get(1001)       // 主键 O(1)
+cfg, err := mgr.Get().Get("main") // 原子快照，只读；其他区域传 Branch 名
+item := cfg.Item.Get(1001)        // 主键 O(1)
 boss := cfg.Monster.GetByName("幼龙")
 ```
 
@@ -136,10 +138,10 @@ go build -o bin/server ./server   # 配置已内嵌，bin/server 拷走即跑
 ```
 gentable -excel <目录> -code <Go生成根目录> -data <外部JSON根目录> [-sides client,server] [-diff-out <文件>] [-version]
 
-  -excel     Excel 目录（递归扫 *.xlsx，自动跳过 ~$/.~ 临时锁文件）
-  -code      生成 <code>/client 与 <code>/server 两个包（含内嵌 data/），
-             另在根目录生成 manifest.json（版本/逐表 md5/行数/源文件 md5/整体 digest，运行时不消费）
-  -data      生成 <data>/client 与 <data>/server（覆盖目录/开发调试）；空串则只出内嵌
+  -excel     Excel 分支根目录（必须含 main；其他一级目录按 sheet 整表覆盖，自动跳过临时锁文件）
+  -code      生成 <code>/client 与 <code>/server（内嵌 data/<branch>/），
+             另在根目录生成 manifest.json（版本/Branch/逐表 md5/行数/源文件 md5/整体 digest）
+  -data      生成 <data>/client/<branch>/ 与 <data>/server/<branch>/；空串则只出内嵌
   -sides     只生成指定端，如 -sides=server（默认 client,server 两端）
   -diff-out  diff 摘要另存文件（CI 归档 / 贴 PR）
 ```
@@ -154,23 +156,26 @@ Excel 打开计算的 xlsx 没有缓存值，读到的是空串。对「数值/�
 ## hotreload API
 
 ```go
-mgr, err := hotreload.New(dir, server.LoadAuto)  // New[C any](dir, load, opts ...Option)
-cfg := mgr.Get()                                  // *server.Config 原子快照，无锁读
-mgr.StartWatch(500 * time.Millisecond)            // mtime 轮询，变化自动重建+原子替换
+mgr, err := hotreload.New(dir, server.LoadConfigSetAuto,
+    hotreload.WithRecursive[server.ConfigSet]())       // 递归监听 Branch 子目录
+set := mgr.Get()                                      // *server.ConfigSet 原子快照，无锁读
+cfg, err := set.Get("main")                          // 空 Branch 也走 main；未知 Branch 报错
+mgr.StartWatch(500 * time.Millisecond)                // 新增/修改/删除都会重建并原子替换
 mgr.StopWatch()
 ```
 
 热更回调（成功时 err 为 nil，失败时旧配置继续生效）两种设法：
 
 ```go
-mgr, _ := hotreload.New(dir, server.LoadAuto,
-    hotreload.WithOnReload(func(cfg *server.Config, err error) { ... }))  // 推荐，并发安全
-mgr.OnReload = func(cfg *server.Config, err error) { ... }                // 兼容写法：必须在 StartWatch 之前赋值
+mgr, _ := hotreload.New(dir, server.LoadConfigSetAuto,
+    hotreload.WithRecursive[server.ConfigSet](),
+    hotreload.WithOnReload(func(cfg *server.ConfigSet, err error) { ... }))
+mgr.OnReload = func(cfg *server.ConfigSet, err error) { ... } // 兼容写法：必须在 StartWatch 前赋值
 ```
 
 `Reload()` 内部互斥串行化，外部调用与 watcher 并发触发安全。
 
-生成的加载函数：`LoadEmbedded()`（只读内嵌）/ `Load(dir)`（只读外部）/ `LoadAuto(dir)`（外部优先回落内嵌）/ `HasExternal(dir)`（来源探测）。
+生成的加载函数：`LoadConfigSetEmbedded()`（只读内嵌）/ `LoadConfigSet(dir)`（只读外部完整目录）/ `LoadConfigSetAuto(dir)`（逐 Branch 逐表外部优先、缺表回落内嵌）/ `HasExternal(dir)`（递归来源探测）。
 
 ## CI 建议
 

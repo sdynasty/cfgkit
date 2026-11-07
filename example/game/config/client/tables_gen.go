@@ -8,9 +8,9 @@ import (
 	"fmt"
 )
 
-// ================= Item (item.xlsx) =================
+// ================= Item (main/item.xlsx) =================
 
-// Item 对应 item.xlsx[Item] 的一行
+// Item 对应 main/item.xlsx[Item] 的一行
 type Item struct {
 	// 道具ID(主键)
 	Id int32 `json:"id"`
@@ -66,9 +66,9 @@ func (t *ItemTable) Get(id int32) *Item { return t.byId[id] }
 // GetByName 按唯一索引 name 查找，找不到返回 nil
 func (t *ItemTable) GetByName(name string) *Item { return t.byName[name] }
 
-// ================= Monster (monster.xlsx) =================
+// ================= Monster (main/monster.xlsx) =================
 
-// Monster 对应 monster.xlsx[Monster] 的一行
+// Monster 对应 main/monster.xlsx[Monster] 的一行
 type Monster struct {
 	// 怪物ID(主键)
 	Id int32 `json:"id"`

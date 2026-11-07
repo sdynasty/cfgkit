@@ -21,6 +21,42 @@ type Config struct {
 	Sources map[string]TableSource
 }
 
+// ConfigSet 是全部 Branch 配置的原子快照。构建后只读。
+type ConfigSet struct {
+	Branches map[string]*Config
+}
+
+// Get 返回指定 Branch 的完整配置；空 Branch 使用 main，未知 Branch 返回错误。
+func (s *ConfigSet) Get(branch string) (*Config, error) {
+	if branch == "" {
+		branch = "main"
+	}
+	cfg, ok := s.Branches[branch]
+	if !ok {
+		return nil, fmt.Errorf("未知配置分支 %q", branch)
+	}
+	return cfg, nil
+}
+
+// Names 返回全部 Branch，按名称排序。
+func (s *ConfigSet) Names() []string {
+	names := make([]string, 0, len(s.Branches))
+	for name := range s.Branches {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// DescribeSources 按 Branch 描述逐表加载来源。
+func (s *ConfigSet) DescribeSources() string {
+	parts := make([]string, 0, len(s.Branches))
+	for _, branch := range s.Names() {
+		parts = append(parts, branch+"{"+s.Branches[branch].DescribeSources()+"}")
+	}
+	return strings.Join(parts, " ")
+}
+
 // TableSource 记录一张表的加载来源
 type TableSource struct {
 	Table    string // 表名（json 文件名去后缀）
@@ -79,52 +115,59 @@ func buildConfig(read func(name string) (data []byte, external bool, err error))
 	return c, nil
 }
 
-// Load 从外部目录读取全部 JSON 配置并构建索引（要求目录是完整的一套表，缺表报错）。
-func Load(dir string) (*Config, error) {
-	return buildConfig(func(name string) ([]byte, bool, error) {
-		data, err := os.ReadFile(filepath.Join(dir, name))
+// buildConfigSet 逐 Branch 构建完整配置；任一分支失败则整组失败。
+func buildConfigSet(read func(branch, name string) (data []byte, external bool, err error)) (*ConfigSet, error) {
+	set := &ConfigSet{Branches: map[string]*Config{}}
+	for _, branch := range []string{"main"} {
+		cfg, err := buildConfig(func(name string) ([]byte, bool, error) {
+			return read(branch, name)
+		})
 		if err != nil {
-			return nil, true, fmt.Errorf("读取配置 %s 失败: %w", name, err)
+			return nil, fmt.Errorf("分支 %s: %w", branch, err)
+		}
+		set.Branches[branch] = cfg
+	}
+	return set, nil
+}
+
+// LoadConfigSet 从外部目录读取全部 Branch 的完整配置，任一缺表都会报错。
+func LoadConfigSet(dir string) (*ConfigSet, error) {
+	return buildConfigSet(func(branch, name string) ([]byte, bool, error) {
+		data, err := os.ReadFile(filepath.Join(dir, branch, name))
+		if err != nil {
+			return nil, true, fmt.Errorf("读取配置 %s/%s 失败: %w", branch, name, err)
 		}
 		return data, true, nil
 	})
 }
 
-// LoadEmbedded 加载编译进二进制的内嵌配置（见 embed_gen.go）。
-// 部署形态: 单二进制，无需携带任何外部数据文件。
-
-// LoadAuto 逐表叠加（overlay）加载: dir 里有哪些表就用哪些表的外部版本，
-// 缺失的表回落该表的内嵌版本。配合 hotreload.Manager 支持单文件热修:
-// 往 dir 放单个 JSON 只覆盖对应表，删掉它即回落内嵌。
-// 注意: 存在但损坏的 JSON 会让整体加载失败（热更保留旧配置，启动 fail-fast），
-// 不会静默回落内嵌——错误应当被看见。
-func LoadAuto(dir string) (*Config, error) {
-	return buildConfig(func(name string) ([]byte, bool, error) {
-		data, err := os.ReadFile(filepath.Join(dir, name))
+// LoadConfigSetAuto 逐 Branch、逐表叠加外部目录与内嵌配置。
+// 存在但损坏的 JSON 会让整组加载失败，不会静默回落内嵌。
+func LoadConfigSetAuto(dir string) (*ConfigSet, error) {
+	return buildConfigSet(func(branch, name string) ([]byte, bool, error) {
+		data, err := os.ReadFile(filepath.Join(dir, branch, name))
 		if err == nil {
 			return data, true, nil
 		}
 		if !os.IsNotExist(err) {
-			return nil, true, fmt.Errorf("读取配置 %s 失败: %w", name, err)
+			return nil, true, fmt.Errorf("读取配置 %s/%s 失败: %w", branch, name, err)
 		}
-		data, err = embeddedJSON.ReadFile("data/" + name)
+		data, err = embeddedJSON.ReadFile("data/" + branch + "/" + name)
 		if err != nil {
-			return nil, false, fmt.Errorf("读取内嵌配置 %s 失败: %w", name, err)
+			return nil, false, fmt.Errorf("读取内嵌配置 %s/%s 失败: %w", branch, name, err)
 		}
 		return data, false, nil
 	})
 }
 
-// HasExternal 报告 dir 下是否存在外部 JSON 配置
+// HasExternal 报告 dir 下是否存在外部 JSON 配置。
 func HasExternal(dir string) bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
-			return true
+	found := false
+	_ = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
+			found = true
 		}
-	}
-	return false
+		return nil
+	})
+	return found
 }

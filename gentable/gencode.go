@@ -67,7 +67,15 @@ func genHeader(pkg, note string) string {
 //	<codeRoot>/server/  package server（仅 s+cs 字段）
 //
 // 每套包含: enum_gen.go / struct_gen.go / tables_gen.go / config_gen.go
-func WriteGoCode(tables []*Table, enums []*EnumDef, structs []*StructDef, codeRoot string, sideList []string, wc *writeCounter) error {
+func WriteGoCode(branches []branchConfig, enums []*EnumDef, structs []*StructDef, codeRoot string, sideList []string, wc *writeCounter) error {
+	if len(branches) == 0 || branches[0].Name != defaultBranch {
+		return fmt.Errorf("生成分支代码缺少 %s", defaultBranch)
+	}
+	tables := branches[0].Tables
+	branchNames := make([]string, 0, len(branches))
+	for _, branch := range branches {
+		branchNames = append(branchNames, branch.Name)
+	}
 	refPK := func(sheet string) string {
 		for _, t := range tables {
 			if t.Sheet == sheet {
@@ -99,7 +107,7 @@ func WriteGoCode(tables []*Table, enums []*EnumDef, structs []*StructDef, codeRo
 		if err := write("tables_gen.go", genTables(tables, refPK, side, note)); err != nil {
 			return err
 		}
-		if err := write("config_gen.go", genConfig(tables, side, note)); err != nil {
+		if err := write("config_gen.go", genConfig(tables, branchNames, side, note)); err != nil {
 			return err
 		}
 		if len(tables) > 0 {
@@ -346,7 +354,7 @@ func genOneTable(buf *bytes.Buffer, t *Table, fs []*Field, refPK func(string) st
 
 // ------------------------------------------------------------ config_gen.go
 
-func genConfig(tables []*Table, side, note string) string {
+func genConfig(tables []*Table, branches []string, side, note string) string {
 	buf := bytes.Buffer{}
 	buf.WriteString(genHeader(side, note))
 	buf.WriteString("import (\n\t\"crypto/md5\"\n\t\"encoding/hex\"\n\t\"fmt\"\n\t\"os\"\n\t\"path/filepath\"\n\t\"sort\"\n\t\"strings\"\n)\n\n")
@@ -355,10 +363,43 @@ func genConfig(tables []*Table, side, note string) string {
 		fmt.Fprintf(&buf, "\t%s *%sTable\n", t.Sheet, t.Sheet)
 	}
 	buf.WriteString("\t// Sources 逐表记录加载来源（overlay 模式下各表来源可能不同），供日志排查「当前在跑哪个版本」\n\tSources map[string]TableSource\n}\n\n")
-	if len(tables) == 0 {
-		buf.WriteString("// Load 从目录读取配置（当前没有任何表）\nfunc Load(dir string) (*Config, error) {\n\treturn &Config{}, nil\n}\n")
-		return buf.String()
+	buf.WriteString(`// ConfigSet 是全部 Branch 配置的原子快照。构建后只读。
+type ConfigSet struct {
+	Branches map[string]*Config
+}
+
+// Get 返回指定 Branch 的完整配置；空 Branch 使用 main，未知 Branch 返回错误。
+func (s *ConfigSet) Get(branch string) (*Config, error) {
+	if branch == "" {
+		branch = "main"
 	}
+	cfg, ok := s.Branches[branch]
+	if !ok {
+		return nil, fmt.Errorf("未知配置分支 %q", branch)
+	}
+	return cfg, nil
+}
+
+// Names 返回全部 Branch，按名称排序。
+func (s *ConfigSet) Names() []string {
+	names := make([]string, 0, len(s.Branches))
+	for name := range s.Branches {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// DescribeSources 按 Branch 描述逐表加载来源。
+func (s *ConfigSet) DescribeSources() string {
+	parts := make([]string, 0, len(s.Branches))
+	for _, branch := range s.Names() {
+		parts = append(parts, branch+"{"+s.Branches[branch].DescribeSources()+"}")
+	}
+	return strings.Join(parts, " ")
+}
+
+`)
 
 	buf.WriteString(`// TableSource 记录一张表的加载来源
 type TableSource struct {
@@ -397,7 +438,7 @@ func (c *Config) DescribeSources() string {
 
 `)
 
-	// buildConfig: Load / LoadEmbedded / LoadAuto 共用的构建链
+	// buildConfig: 各 Branch 的 ConfigSet 加载共用逐表构建链
 	buf.WriteString("// buildConfig 通过 read 逐表读取并构建；read 返回数据与来源（external=true 表示外部目录）。任一步失败即返回错误——热更场景下调用方应继续使用旧 Config。\nfunc buildConfig(read func(name string) (data []byte, external bool, err error)) (*Config, error) {\n\tc := &Config{Sources: map[string]TableSource{}}\n\tvar data []byte\n\tvar external bool\n\tvar err error\n")
 	for _, t := range tables {
 		name := toSnake(t.Sheet) + ".json"
@@ -407,54 +448,64 @@ func (c *Config) DescribeSources() string {
 	}
 	buf.WriteString("\treturn c, nil\n}\n\n")
 
-	buf.WriteString(`// Load 从外部目录读取全部 JSON 配置并构建索引（要求目录是完整的一套表，缺表报错）。
-func Load(dir string) (*Config, error) {
-	return buildConfig(func(name string) ([]byte, bool, error) {
-		data, err := os.ReadFile(filepath.Join(dir, name))
+	buf.WriteString("// buildConfigSet 逐 Branch 构建完整配置；任一分支失败则整组失败。\nfunc buildConfigSet(read func(branch, name string) (data []byte, external bool, err error)) (*ConfigSet, error) {\n\tset := &ConfigSet{Branches: map[string]*Config{}}\n\tfor _, branch := range []string{")
+	for _, branch := range branches {
+		fmt.Fprintf(&buf, "%q, ", branch)
+	}
+	buf.WriteString(`} {
+		cfg, err := buildConfig(func(name string) ([]byte, bool, error) {
+			return read(branch, name)
+		})
 		if err != nil {
-			return nil, true, fmt.Errorf("读取配置 %s 失败: %w", name, err)
+			return nil, fmt.Errorf("分支 %s: %w", branch, err)
+		}
+		set.Branches[branch] = cfg
+	}
+	return set, nil
+}
+
+`)
+
+	buf.WriteString(`// LoadConfigSet 从外部目录读取全部 Branch 的完整配置，任一缺表都会报错。
+func LoadConfigSet(dir string) (*ConfigSet, error) {
+	return buildConfigSet(func(branch, name string) ([]byte, bool, error) {
+		data, err := os.ReadFile(filepath.Join(dir, branch, name))
+		if err != nil {
+			return nil, true, fmt.Errorf("读取配置 %s/%s 失败: %w", branch, name, err)
 		}
 		return data, true, nil
 	})
 }
 
-// LoadEmbedded 加载编译进二进制的内嵌配置（见 embed_gen.go）。
-// 部署形态: 单二进制，无需携带任何外部数据文件。
-
-// LoadAuto 逐表叠加（overlay）加载: dir 里有哪些表就用哪些表的外部版本，
-// 缺失的表回落该表的内嵌版本。配合 hotreload.Manager 支持单文件热修:
-// 往 dir 放单个 JSON 只覆盖对应表，删掉它即回落内嵌。
-// 注意: 存在但损坏的 JSON 会让整体加载失败（热更保留旧配置，启动 fail-fast），
-// 不会静默回落内嵌——错误应当被看见。
-func LoadAuto(dir string) (*Config, error) {
-	return buildConfig(func(name string) ([]byte, bool, error) {
-		data, err := os.ReadFile(filepath.Join(dir, name))
+// LoadConfigSetAuto 逐 Branch、逐表叠加外部目录与内嵌配置。
+// 存在但损坏的 JSON 会让整组加载失败，不会静默回落内嵌。
+func LoadConfigSetAuto(dir string) (*ConfigSet, error) {
+	return buildConfigSet(func(branch, name string) ([]byte, bool, error) {
+		data, err := os.ReadFile(filepath.Join(dir, branch, name))
 		if err == nil {
 			return data, true, nil
 		}
 		if !os.IsNotExist(err) {
-			return nil, true, fmt.Errorf("读取配置 %s 失败: %w", name, err)
+			return nil, true, fmt.Errorf("读取配置 %s/%s 失败: %w", branch, name, err)
 		}
-		data, err = embeddedJSON.ReadFile("data/" + name)
+		data, err = embeddedJSON.ReadFile("data/" + branch + "/" + name)
 		if err != nil {
-			return nil, false, fmt.Errorf("读取内嵌配置 %s 失败: %w", name, err)
+			return nil, false, fmt.Errorf("读取内嵌配置 %s/%s 失败: %w", branch, name, err)
 		}
 		return data, false, nil
 	})
 }
 
-// HasExternal 报告 dir 下是否存在外部 JSON 配置
+// HasExternal 报告 dir 下是否存在外部 JSON 配置。
 func HasExternal(dir string) bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
-			return true
+	found := false
+	_ = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
+			found = true
 		}
-	}
-	return false
+		return nil
+	})
+	return found
 }
 `)
 	return buf.String()
@@ -470,17 +521,17 @@ func genEmbed(side, note string) string {
 	"fmt"
 )
 
-// 内嵌配置数据: data/*.json 由 gentable 生成并随 go build 编译进二进制
+// 内嵌配置数据: data/<branch>/*.json 由 gentable 生成并随 go build 编译进二进制
 //
-//go:embed data/*.json
+//go:embed data
 var embeddedJSON embed.FS
 
-// LoadEmbedded 加载编译进二进制的内嵌配置
-func LoadEmbedded() (*Config, error) {
-	return buildConfig(func(name string) ([]byte, bool, error) {
-		data, err := embeddedJSON.ReadFile("data/" + name)
+// LoadConfigSetEmbedded 加载编译进二进制的全部 Branch 内嵌配置。
+func LoadConfigSetEmbedded() (*ConfigSet, error) {
+	return buildConfigSet(func(branch, name string) ([]byte, bool, error) {
+		data, err := embeddedJSON.ReadFile("data/" + branch + "/" + name)
 		if err != nil {
-			return nil, false, fmt.Errorf("读取内嵌配置 %s 失败: %w", name, err)
+			return nil, false, fmt.Errorf("读取内嵌配置 %s/%s 失败: %w", branch, name, err)
 		}
 		return data, false, nil
 	})

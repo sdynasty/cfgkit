@@ -1,30 +1,17 @@
-// gentable 导表工具：扫描 Excel 目录，校验后按端生成 JSON 数据与 Go 代码。
+// gentable 导表工具：按 excel/main 与 excel/<branch> 读取分支配置，校验后生成完整 JSON 与 Go 代码。
 //
 // 用法:
 //
 //	go run github.com/sdynasty/cfgkit/gentable@latest -excel excel -code game/config -data data
 //
-// 产物（按导出标记 cs/c/s 分端，两端完全独立；可用 -sides 只导出指定端）:
+// 产物（按导出标记 cs/c/s 分端，可用 -sides 只导一端）:
 //
-//	<code>/client/  package client  仅 cs+c 字段
-//	<code>/server/  package server  仅 cs+s 字段
-//	<code>/<side>/data/*.json       内嵌数据（go:embed 编译进二进制）
-//	<code>/manifest.json            产物清单（版本/逐表 md5/整体 digest，运行时不消费）
-//	<data>/<side>/*.json            外部数据（开发期热更调试/线上覆盖目录，-data "" 可关闭）
+//	<code>/<side>/data/<branch>/*.json  内嵌数据（go:embed 编译进二进制）
+//	<code>/manifest.json                产物清单（版本/分支/逐表 md5/整体 digest）
+//	<data>/<side>/<branch>/*.json       外部数据（-data "" 可关闭）
 //
-// Excel 规范:
-//   - 每个 sheet 一张表，sheet 名即表名（全局唯一；Enum 开头且表头为 name/value/comment 的是枚举表，
-//     Struct 开头且表头为 name/type/comment 的是结构体表，其余一律按数据表处理）
-//   - 数据表固定 4 行表头: 字段名 / 类型 / 中文注释 / 导出标记(cs|c|s|-)
-//   - 第 5 行起为数据，首列以 '#' 开头的行是注释行，跳过
-//   - 首列必须为主键(int/int64/string)，且导出标记必须为 cs
-//   - 类型: int int64 float bool string enum<X> ref<X> struct<X> list<T> map<K,V>
-//     可加索引后缀: string#uniq(唯一,不能为空) string#index(普通)
-//   - Struct<名字> 开头的 sheet 定义内联结构体（表头 name/type/comment），
-//     单元格写法 字段:值;字段:值，整格留空为 Go 零值；
-//     字段类型可带可选标记 type?（省略取零值）与 type?=默认值（省略取默认值）
-//   - list 用 | 分隔、struct/map 用 ; 和 : 分隔；值里要写分隔符本身时用反斜杠转义:
-//     \\ 表示 \，\| 表示 |，\; 表示 ;，\: 表示 :
+// main 必须包含全部表、Enum 与 Struct；其他一级目录按 sheet 整表覆盖 main，
+// 不允许新增表或修改表结构。未覆盖的表从 main 补齐，每个分支都输出完整有效配置。
 package main
 
 import (
@@ -44,7 +31,7 @@ func buildVersion() string {
 }
 
 func main() {
-	excelDir := flag.String("excel", "excel", "Excel 目录")
+	excelDir := flag.String("excel", "excel", "Excel 分支根目录（必须含 main，其他一级目录为 Branch）")
 	codeRoot := flag.String("code", "game/config", "Go 代码生成根目录（下分 client/server，另生成 manifest.json）")
 	dataRoot := flag.String("data", "data", "外部 JSON 生成根目录（开发调试/覆盖目录用，空字符串则只生成内嵌数据）")
 	sidesFlag := flag.String("sides", "client,server", "只生成指定端: client,server 的逗号分隔子集")
@@ -68,12 +55,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 第一阶段: 读全部工作簿（表头结构 + 主键集合 + 枚举/结构体定义 + 公式缓存告警）
-	tables, enums, structs, warns, errs := LoadExcels(*excelDir)
-	// 第二阶段: 解析数据值 + 交叉校验（枚举/引用/结构体/唯一索引/循环嵌套/命名冲突）
-	if len(errs) == 0 {
-		errs = ResolveAll(tables, enums, structs)
-	}
+	branches, enums, structs, warns, errs := LoadBranchExcels(*excelDir)
 	if len(errs) > 0 {
 		fmt.Fprintf(os.Stderr, "\n✗ 导表失败，共 %d 个错误:\n", len(errs))
 		for _, e := range errs {
@@ -83,27 +65,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 第三阶段: 采集 diff 基线（必须在写入新产物之前！）
+	// 采集 diff 基线必须在写入新产物之前。
 	codeSnap := SnapshotCode(*codeRoot, sideList)
 	sideDiffs := map[string][]TableDiff{}
 	firstRun := true
 	for _, side := range sideList {
-		baseDir := BaselineDir(*dataRoot, *codeRoot, side)
-		if _, err := os.Stat(baseDir); err == nil {
-			firstRun = false
+		for _, branch := range branches {
+			baseDir := BaselineDir(*dataRoot, *codeRoot, side, branch.Name)
+			if _, err := os.Stat(baseDir); err == nil {
+				firstRun = false
+			}
+			sideDiffs[side] = append(sideDiffs[side], DiffSide(branch.Tables, side, baseDir)...)
 		}
-		sideDiffs[side] = DiffSide(tables, side, baseDir)
 	}
 
-	// 第四阶段: 生成产物（各端各一套；JSON 同时写入包内 data/ 供 go:embed 内嵌；
-	// 全部写入走 write-if-changed：内容相同的文件不重写，避免刷 mtime 触发下游无效热更）
+	// JSON 同时写入包内 data/ 供 go:embed 内嵌；全部写入走 write-if-changed。
 	wc := &writeCounter{}
-	jsonFiles, err := WriteJSONAll(tables, *dataRoot, *codeRoot, sideList, wc)
+	jsonFiles, err := WriteJSONAll(branches, *dataRoot, *codeRoot, sideList, wc)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "✗ 写 JSON 失败:", err)
 		os.Exit(1)
 	}
-	if err := WriteGoCode(tables, enums, structs, *codeRoot, sideList, wc); err != nil {
+	if err := WriteGoCode(branches, enums, structs, *codeRoot, sideList, wc); err != nil {
 		fmt.Fprintln(os.Stderr, "✗ 写 Go 代码失败:", err)
 		os.Exit(1)
 	}
@@ -112,29 +95,33 @@ func main() {
 		os.Exit(1)
 	}
 
+	branchNames := make([]string, 0, len(branches))
 	rowCount := 0
-	for _, t := range tables {
-		rowCount += len(t.Values)
+	for _, branch := range branches {
+		branchNames = append(branchNames, branch.Name)
+		for _, t := range branch.Tables {
+			rowCount += len(t.Values)
+		}
 	}
-	fmt.Printf("✓ 导表完成: %d 张表(%d 行数据), %d 个枚举, %d 个结构体, %d 个端%v\n",
-		len(tables), rowCount, len(enums), len(structs), len(sideList), sideList)
+	fmt.Printf("✓ 导表完成: %d 个分支%v, %d 个枚举, %d 个结构体, %d 个端%v, %d 行数据\n",
+		len(branches), branchNames, len(enums), len(structs), len(sideList), sideList, rowCount)
 	fmt.Printf("  产物写入: %d 个文件更新, %d 个未变化（内容相同，未刷新 mtime）\n", wc.updated, wc.unchanged)
-	fmt.Printf("  内嵌 JSON -> %s/{%s}/data（go:embed 编译进二进制）\n", *codeRoot, strings.Join(sideList, ","))
+	fmt.Printf("  内嵌 JSON -> %s/{%s}/data/<branch>（go:embed 编译进二进制）\n", *codeRoot, strings.Join(sideList, ","))
 	if *dataRoot != "" {
-		fmt.Printf("  外部 JSON -> %s/{%s}（开发热更/线上覆盖目录）\n", *dataRoot, strings.Join(sideList, ","))
+		fmt.Printf("  外部 JSON -> %s/{%s}/<branch>（开发热更/线上覆盖目录）\n", *dataRoot, strings.Join(sideList, ","))
 	}
 	fmt.Printf("  Go 代码   -> %s/{%s}\n", *codeRoot, strings.Join(sideList, ","))
 	fmt.Printf("  产物清单  -> %s/manifest.json（版本 %s）\n", *codeRoot, manifestVersion())
-	for _, t := range tables {
-		cn, sn := len(fieldsFor(t, "client")), len(fieldsFor(t, "server"))
-		fmt.Printf("  - %s[%s]: %d 行 -> %s.json (client %d 字段 / server %d 字段)\n",
-			t.File, t.Sheet, len(t.Values), toSnake(t.Sheet), cn, sn)
+	for _, branch := range branches {
+		for _, t := range branch.Tables {
+			cn, sn := len(fieldsFor(t, "client")), len(fieldsFor(t, "server"))
+			fmt.Printf("  - %s[%s]: %d 行 -> %s/%s.json (client %d 字段 / server %d 字段)\n",
+				t.File, t.Sheet, len(t.Values), branch.Name, toSnake(t.Sheet), cn, sn)
+		}
 	}
 
-	// 公式缓存等不阻断告警，导表结束统一打印到 stderr
 	printWarnings(warns)
 
-	// diff 摘要（基线是写入前采集的，代码文件对比在写入后）
 	changedCode := ChangedCodeFiles(codeSnap, *codeRoot, sideList)
 	report := BuildDiffReport(sideDiffs, changedCode, firstRun, sideList)
 	fmt.Println(report)

@@ -18,7 +18,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "excel")
+OUT = os.path.join(ROOT, "excel", "main")
 os.makedirs(OUT, exist_ok=True)
 
 HEADER_STYLE = [

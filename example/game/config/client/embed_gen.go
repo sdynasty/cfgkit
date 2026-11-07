@@ -8,17 +8,17 @@ import (
 	"fmt"
 )
 
-// 内嵌配置数据: data/*.json 由 gentable 生成并随 go build 编译进二进制
+// 内嵌配置数据: data/<branch>/*.json 由 gentable 生成并随 go build 编译进二进制
 //
-//go:embed data/*.json
+//go:embed data
 var embeddedJSON embed.FS
 
-// LoadEmbedded 加载编译进二进制的内嵌配置
-func LoadEmbedded() (*Config, error) {
-	return buildConfig(func(name string) ([]byte, bool, error) {
-		data, err := embeddedJSON.ReadFile("data/" + name)
+// LoadConfigSetEmbedded 加载编译进二进制的全部 Branch 内嵌配置。
+func LoadConfigSetEmbedded() (*ConfigSet, error) {
+	return buildConfigSet(func(branch, name string) ([]byte, bool, error) {
+		data, err := embeddedJSON.ReadFile("data/" + branch + "/" + name)
 		if err != nil {
-			return nil, false, fmt.Errorf("读取内嵌配置 %s 失败: %w", name, err)
+			return nil, false, fmt.Errorf("读取内嵌配置 %s/%s 失败: %w", branch, name, err)
 		}
 		return data, false, nil
 	})

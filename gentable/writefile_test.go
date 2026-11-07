@@ -18,11 +18,12 @@ func exportAll(t *testing.T, excelDir, codeRoot, dataRoot string) *writeCounter 
 		t.Fatalf("ResolveAll 报错: %v", errs)
 	}
 	wc := &writeCounter{}
-	jsonFiles, err := WriteJSONAll(tables, dataRoot, codeRoot, allSides, wc)
+	branches := []branchConfig{{Name: defaultBranch, Tables: tables}}
+	jsonFiles, err := WriteJSONAll(branches, dataRoot, codeRoot, allSides, wc)
 	if err != nil {
 		t.Fatalf("WriteJSONAll: %v", err)
 	}
-	if err := WriteGoCode(tables, enums, structs, codeRoot, allSides, wc); err != nil {
+	if err := WriteGoCode(branches, enums, structs, codeRoot, allSides, wc); err != nil {
 		t.Fatalf("WriteGoCode: %v", err)
 	}
 	if err := writeManifest(excelDir, codeRoot, jsonFiles, allSides, wc); err != nil {
