@@ -117,6 +117,11 @@ func (t *Table) Loc(row, col0 int, field string) string {
 
 // ------------------------------------------------------------ 第一阶段: 读表头 + 主键
 
+// docSheetPrefix 说明/文档页的 sheet 名前缀。以 # 开头的 sheet 不参与导表，
+// 内容随意（表头规范、字段解释、变更记录等）。# 不可能是合法 Go 标识符，
+// 因此不会与「sheet 名 = Go 类型名」的数据表冲突。
+const docSheetPrefix = "#"
+
 // LoadExcels 扫描目录下所有 xlsx（跳过 ~$/.~ 临时文件），解析表头结构、枚举与结构体定义。
 // warns 是不阻断导表的告警（如公式无缓存值），由调用方在导表结束时统一打印。
 func LoadExcels(dir string) (tables []*Table, enums []*EnumDef, structs []*StructDef, warns []string, errs []error) {
@@ -146,6 +151,9 @@ func LoadExcels(dir string) (tables []*Table, enums []*EnumDef, structs []*Struc
 		}
 		rel, _ := filepath.Rel(dir, path)
 		for _, sheet := range f.GetSheetList() {
+			if strings.HasPrefix(sheet, docSheetPrefix) {
+				continue // 说明页，不参与导表
+			}
 			rows, err := f.GetRows(sheet)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%s[%s]: 读取失败: %w", rel, sheet, err))

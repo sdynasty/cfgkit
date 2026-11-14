@@ -311,6 +311,30 @@ func TestLoadAndResolveValid(t *testing.T) {
 	}
 }
 
+// 以 # 开头的 sheet 是说明页，不参与导表：行数、内容都不受表头规范约束。
+func TestLoadExcelsSkipsDocSheets(t *testing.T) {
+	item := itemWB([]any{1001, "木剑", "White"})
+	item.sheets = append(item.sheets, sheetSpec{"#说明", [][]any{
+		{"Item 表说明"},
+		{"本页不参与导表，随便写"},
+	}})
+	dir := buildDir(t, []wbSpec{
+		commonWB(sheetSpec{"#变更记录", [][]any{{"2026-11-14 初版"}}}),
+		item,
+	})
+
+	tables, enums, structs, _, errs := LoadExcels(dir)
+	if len(errs) != 0 {
+		t.Fatalf("LoadExcels 报错: %v", errs)
+	}
+	if len(tables) != 1 || len(enums) != 1 || len(structs) != 1 {
+		t.Fatalf("数量不符: tables=%d enums=%d structs=%d", len(tables), len(enums), len(structs))
+	}
+	if tables[0].Sheet != "Item" {
+		t.Fatalf("唯一数据表应为 Item，实际 %q", tables[0].Sheet)
+	}
+}
+
 func TestLoadAndResolveErrors(t *testing.T) {
 	tests := []struct {
 		name    string

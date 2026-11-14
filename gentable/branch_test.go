@@ -52,6 +52,26 @@ func TestLoadBranchExcels(t *testing.T) {
 	}
 }
 
+// 分支工作簿里的说明页同样跳过，不会被误判为「分支新增表」。
+func TestLoadBranchExcelsSkipsDocSheets(t *testing.T) {
+	root := t.TempDir()
+	placeBranch(t, root, "main", []wbSpec{
+		commonWB(),
+		itemWB([]any{1001, "木剑", "White"}),
+	})
+	overlay := itemWB([]any{1001, "分利剑", "Green"})
+	overlay.sheets = append(overlay.sheets, sheetSpec{"#说明", [][]any{{"peru 覆盖说明"}}})
+	placeBranch(t, root, "peru", []wbSpec{overlay})
+
+	branches, _, _, _, errs := LoadBranchExcels(root)
+	if len(errs) != 0 {
+		t.Fatalf("LoadBranchExcels 报错: %v", errs)
+	}
+	if got := findTable(t, branches[1].Tables, "Item").Values[0]["name"]; got != "分利剑" {
+		t.Fatalf("peru Item.name = %v", got)
+	}
+}
+
 func TestLoadBranchExcelsRejectsInvalidOverride(t *testing.T) {
 	t.Run("new table", func(t *testing.T) {
 		root := t.TempDir()
